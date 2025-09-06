@@ -2,14 +2,6 @@
 
 Este README documenta las funciones de logging disponibles en la librería `TelegramBot` para monitorear y visualizar la actividad del bot en tiempo real.
 
-## 📚 Índice
-
-- [Descripción del Sistema de Logging](#descripción-del-sistema-de-logging)
-- [Funciones Disponibles](#funciones-disponibles)
-- [Ejemplos de Uso](#ejemplos-de-uso)
-- [Configuración del Logging](#configuración-del-logging)
-- [Casos de Uso Comunes](#casos-de-uso-comunes)
-
 ## 📝 Descripción del Sistema de Logging
 
 La librería `TelegramBot` incluye un sistema interno de logging que:
