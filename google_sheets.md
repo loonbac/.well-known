@@ -1,205 +1,217 @@
-# 📊 Especificación Técnica: Módulo Google Sheets (google_sheets_lib.py)
+# 📋 Especificación Técnica: GoogleSheetsReader
 
-## 🎯 Objetivo
+## 📖 Descripción General
 
-Crear una librería Python que permita leer y escribir datos de Google Sheets usando credenciales de Service Account, sin dependencias externas como `gspread`. Solo debe usar librerías estándar de Python (`urllib`, `json`, `datetime`) y `PyJWT` para la autenticación.
+Debes crear una clase `GoogleSheetsReader` que maneje la lectura y escritura de datos de Google Sheets para un sistema de gestión de facturas. La clase debe ser **100% compatible** con el sistema existente.
 
-## 📋 Clase Principal
+## 🏗️ Arquitectura Requerida
 
-### `GoogleSheetsReader`
-
-**Propósito**: Manejar todas las operaciones de lectura y escritura con Google Sheets usando la API REST de Google.
-
-## 🔧 Constructor
-
+### Clase Principal
 ```python
-def __init__(self, creds_path, sheet_id):
+class GoogleSheetsReader:
+    def __init__(self, creds_path, sheet_id):
+        # Tu implementación aquí
+        pass
 ```
 
-**Parámetros:**
-- `creds_path` (str): Ruta al archivo JSON con las credenciales del service account
-- `sheet_id` (str): ID de la hoja de cálculo de Google (extraído de la URL)
+### Dependencias Recomendadas
+- `google-api-python-client>=2.0.0`
+- `google-auth>=2.0.0` 
+- `google-auth-oauthlib>=0.5.0`
+- `google-auth-httplib2>=0.1.0`
 
-**Funcionalidad:**
-- Cargar y almacenar las credenciales del service account
-- Guardar el ID de la hoja para uso posterior
+## 🔧 Métodos Obligatorios
 
-## 🔐 Autenticación
+### 1. `__init__(self, creds_path, sheet_id)`
 
-### `get_access_token(self)`
-
-**Retorna**: `str` - Token de acceso válido
-
-**Funcionalidad:**
-- Crear un JWT usando las credenciales del service account
-- Usar el scope: `https://www.googleapis.com/auth/spreadsheets` (lectura y escritura)
-- Intercambiar el JWT por un access token válido
-- Token válido por 1 hora (3600 segundos)
-
-**Implementación requerida:**
-- Header JWT: `{'alg': 'RS256', 'typ': 'JWT'}`
-- Payload debe incluir: `iss`, `scope`, `aud`, `iat`, `exp`
-- Usar `PyJWT` para encodear con la private_key
-- Hacer request POST a `token_uri` con grant_type JWT
-
-## 📖 Lectura de Datos
-
-### `read_columns(self, range_c, range_d, range_h, range_j=None, range_monto=None)`
+**Propósito:** Inicializar la conexión con Google Sheets
 
 **Parámetros:**
-- `range_c` (str): Rango para columna C (nombres de empresa) ej: "Hoja 1!C2:C"
-- `range_d` (str): Rango para columna D (número de factura) ej: "Hoja 1!D2:D"  
-- `range_h` (str): Rango para columna H (fecha vencimiento) ej: "Hoja 1!H2:H"
-- `range_j` (str, opcional): Rango para columna J (estado pago) ej: "Hoja 1!J2:J"
-- `range_monto` (str, opcional): Rango para columna de monto ej: "Hoja 1!E2:E"
+- `creds_path` (str): Ruta al archivo JSON de credenciales de Google Service Account
+- `sheet_id` (str): ID de la hoja de Google Sheets
 
-**Retorna**: `list[dict]` - Lista de diccionarios con estructura:
+**Requisitos:**
+- Establecer conexión con Google Sheets API
+- Configurar autenticación usando Service Account
+- Implementar sistema de logging interno silencioso
+- NO debe imprimir warnings ni logs de Google APIs
+
+### 2. `read_columns(self, range_c, range_d, range_h, range_j=None, range_monto=None)`
+
+**Propósito:** Leer datos de múltiples columnas y retornar estructura unificada
+
+**Parámetros:**
+- `range_c` (str): Rango de la columna C (nombres de empresas)
+- `range_d` (str): Rango de la columna D (números de factura)
+- `range_h` (str): Rango de la columna H (fechas de vencimiento)
+- `range_j` (str, opcional): Rango de la columna J (estados de pago)
+- `range_monto` (str, opcional): Rango de cualquier columna con montos
+
+**Retorno Obligatorio:**
 ```python
-{
-    'id': int,          # Número de fila (índice + 2)
-    'nombre': str,      # Nombre de empresa
-    'factura': str,     # Número de factura
-    'vencimiento': str, # Fecha de vencimiento
-    'estado': str,      # Estado del pago (si range_j proporcionado)
-    'monto': str        # Monto (si range_monto proporcionado)
-}
+[
+    {
+        'id': 2,                              # int (número de fila en Google Sheets)
+        'nombre': 'EMPRESA S.A.C.',           # str (columna C)
+        'factura': 'F012-00165807',           # str (columna D)
+        'vencimiento': '6/09/2025',           # str (columna H)
+        'estado': 'PAGADO',                   # str (columna J o '')
+        'monto': '$155.96'                    # str (columna monto o '')
+    },
+    # ... más filas
+]
 ```
 
-**Funcionalidad:**
-- Hacer múltiples requests a la API de Google Sheets para cada rango
-- URL base: `https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}/values/{rango_codificado}`
-- **IMPORTANTE**: Codificar el rango con `urllib.parse.quote()` para manejar espacios
-- Combinar todas las columnas por índice de fila
-- Asignar ID único basado en número de fila (índice + 2)
-- Manejar filas vacías o de diferentes longitudes
+**Comportamiento Crítico:**
+- `id` DEBE ser `i+2` donde `i` es el índice del array (fila 2 = índice 0)
+- Si una celda está vacía, usar string vacío `''`
+- Si `range_j` o `range_monto` son `None`, esos campos deben ser `''`
+- Retornar lista vacía `[]` en caso de error
+- NO debe imprimir errores
 
-## ✏️ Escritura de Datos
+### 3. `format_rows_bonito(self, rows)`
 
-### `actualizar_pagado(self, fila_id, sheet_name='Hoja 1', col_j='J')`
+**Propósito:** Formatear lista de filas en texto legible para Telegram
 
 **Parámetros:**
-- `fila_id` (int): Número de fila a actualizar
+- `rows` (list): Lista de diccionarios con estructura de `read_columns`
+
+**Retorno Obligatorio:**
+```python
+# Para UNA fila:
+"ID: 9\nEmpresa: FIORELLA REPRESENTACIONES S.A.C.\nFactura: F012-00165807\nMonto: $155.96\nVencimiento: 6/09/2025\nEstado: PAGADO\n-------------------------"
+
+# Para MÚLTIPLES filas (separadas por \n):
+"ID: 9\nEmpresa: FIORELLA...\n-------------------------\nID: 22\nEmpresa: OTRA..."
+
+# Si no hay datos:
+"No hay datos."
+```
+
+**Formato Exacto:**
+- Línea 1: `ID: {id}`
+- Línea 2: `Empresa: {nombre}`
+- Línea 3: `Factura: {factura}`
+- Línea 4: `Monto: {monto}`
+- Línea 5: `Vencimiento: {vencimiento}`
+- Línea 6: `Estado: {estado}`
+- Línea 7: `-------------------------` (25 guiones)
+
+**Comportamiento:**
+- Solo incluir filas que tengan al menos `nombre`, `factura` O `vencimiento`
+- Usar `row.get('monto','')` y `row.get('estado','')` para campos opcionales
+
+### 4. `actualizar_pagado(self, fila_id, sheet_name='Hoja 1', col_j='J')`
+
+**Propósito:** Actualizar una celda específica con el valor "PAGADO"
+
+**Parámetros:**
+- `fila_id` (str/int): Número de fila en Google Sheets
 - `sheet_name` (str): Nombre de la hoja (por defecto 'Hoja 1')
 - `col_j` (str): Columna a actualizar (por defecto 'J')
 
-**Retorna**: `bytes` - Respuesta del servidor
+**Comportamiento:**
+- Actualizar celda en `{sheet_name}!{col_j}{fila_id}` con valor "PAGADO"
+- Usar `valueInputOption='RAW'`
+- Retornar resultado de la operación o `None` si falla
+- NO debe imprimir errores
 
-**Funcionalidad:**
-- Actualizar una celda específica con el valor "PAGADO"
-- Usar método PUT con la API de Google Sheets
-- URL: `https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}/values/{rango_codificado}?valueInputOption=RAW`
-- **IMPORTANTE**: Codificar el rango con `urllib.parse.quote()`
-- Body JSON: `{"values": [["PAGADO"]]}`
+**Ejemplo:** `actualizar_pagado("9")` debe actualizar `Hoja 1!J9` con "PAGADO"
 
-## 🔍 Filtros de Datos
+### 5. `filtrar_proximos_vencimientos(self, rows, dias=5)`
 
-### `filtrar_proximos_vencimientos(self, rows, dias=5)`
-
-**Parámetros:**
-- `rows` (list[dict]): Lista de filas obtenidas con `read_columns()`
-- `dias` (int): Número de días hacia el futuro a considerar (por defecto 5)
-
-**Retorna**: `list[dict]` - Filas que vencen en los próximos N días
-
-**Funcionalidad:**
-- Parsear fechas en múltiples formatos: `%d/%m/%Y`, `%Y-%m-%d`, `%d-%m-%Y`, `%d/%m/%y`
-- Comparar con fecha actual
-- Filtrar filas donde: `0 <= (fecha_vencimiento - hoy).days <= dias`
-- Ignorar filas con fechas inválidas o no parseables
-
-### `filtrar_pendientes(self, rows)`
+**Propósito:** Filtrar facturas que vencen en los próximos N días
 
 **Parámetros:**
-- `rows` (list[dict]): Lista de filas obtenidas con `read_columns()`
+- `rows` (list): Lista de diccionarios de `read_columns`
+- `dias` (int): Número de días hacia adelante (por defecto 5)
 
-**Retorna**: `list[dict]` - Filas con fecha de vencimiento >= hoy
+**Retorno:** Lista filtrada con mismo formato que `read_columns`
 
-**Funcionalidad:**
-- Similar a `filtrar_proximos_vencimientos()` pero sin límite superior
-- Filtrar filas donde: `(fecha_vencimiento - hoy).days >= 0`
-- Incluye facturas que vencen hoy o en el futuro
+**Lógica Requerida:**
+- Parsear `row['vencimiento']` usando estos formatos en orden:
+  1. `"%d/%m/%Y"` (6/09/2025)
+  2. `"%Y-%m-%d"` (2025-09-06)
+  3. `"%d-%m-%Y"` (06-09-2025)  
+  4. `"%d/%m/%y"` (6/09/25)
+- Calcular diferencia: `(fecha_vencimiento - fecha_hoy).days`
+- Incluir solo si: `0 <= diferencia_dias <= dias`
+- Ignorar filas con fechas inválidas (no retornar error)
 
-## 🎨 Formateo de Datos
+### 6. `filtrar_pendientes(self, rows)`
 
-### `format_rows_bonito(self, rows)`
+**Propósito:** Filtrar facturas que aún no han vencido (fecha >= hoy)
 
 **Parámetros:**
-- `rows` (list[dict]): Lista de filas a formatear
+- `rows` (list): Lista de diccionarios de `read_columns`
 
-**Retorna**: `str` - Texto formateado para mostrar
+**Retorno:** Lista filtrada con mismo formato que `read_columns`
 
-**Formato esperado:**
-```
-ID: {id}
-Empresa: {nombre}
-Factura: {factura}
-Monto: {monto}
-Vencimiento: {vencimiento}
-Estado: {estado}
--------------------------
-```
+**Lógica Requerida:**
+- Usar mismo parsing de fechas que `filtrar_proximos_vencimientos`
+- Incluir solo si: `(fecha_vencimiento - fecha_hoy).days >= 0`
+- Ignorar filas con fechas inválidas
 
-**Funcionalidad:**
-- Solo incluir filas que tengan al menos uno de: nombre, factura, vencimiento
-- Separar cada factura con línea de guiones
-- Retornar "No hay datos." si no hay filas válidas
+## 🔒 Requisitos de Silenciamiento
 
-## 🛠️ Consideraciones Técnicas
+**CRÍTICO:** La librería NO debe imprimir NADA en consola:
 
-### Manejo de URLs
-- **CRÍTICO**: Usar `urllib.parse.quote()` para codificar rangos que contengan espacios
-- Ejemplo: `"Hoja 1!C2:C"` debe convertirse a `"Hoja%201!C2:C"`
+- ❌ Sin warnings de `file_cache is only supported with oauth2client<4.0.0`
+- ❌ Sin logs de autenticación de Google
+- ❌ Sin mensajes de error de HTTP
+- ❌ Sin prints de debugging
 
-### Manejo de Errores
-- Capturar y manejar excepciones de red (`urllib.error.HTTPError`)
-- Validar respuestas JSON de la API
-- Manejar casos donde las columnas tienen diferentes longitudes
+**Métodos recomendados:**
+- Configurar `warnings.filterwarnings('ignore')`
+- Desactivar loggers de Google APIs
+- Usar try/catch silenciosos
 
-### Autenticación
-- Los tokens tienen duración de 1 hora
-- No es necesario implementar refresh automático (se genera nuevo token por llamada)
-- Usar scope completo de Sheets, no readonly
+## 📊 Sistema de Logging Interno
 
-### Formatos de Fecha
-- Soportar múltiples formatos comunes
-- Usar `.strip()` para limpiar espacios
-- Ser robusto ante fechas inválidas
+**Opcional pero Recomendado:**
 
-## 📁 Dependencias Requeridas
+Implementar sistema interno de logging similar a:
 
 ```python
-import json
-import urllib.request
-import urllib.parse
-from datetime import datetime, timedelta
-import jwt  # PyJWT
+def log(self, emoji, message):
+    # Guardar en memoria, NO imprimir
+    pass
+
+def get_logs(self, last_n=None):
+    # Retornar logs para debugging
+    pass
+
+def print_logs(self, last_n=10):
+    # Imprimir solo cuando se solicite explícitamente
+    pass
 ```
 
-## 🔗 Endpoints de Google API
+## 🎯 Criterios de Éxito
 
-### Lectura:
-- GET `https://sheets.googleapis.com/v4/spreadsheets/{spreadsheetId}/values/{range}`
+Tu implementación será exitosa si:
 
-### Escritura:
-- PUT `https://sheets.googleapis.com/v4/spreadsheets/{spreadsheetId}/values/{range}?valueInputOption=RAW`
+1. ✅ Todos los métodos retornan datos en formato exacto especificado
+2. ✅ `read_columns` genera IDs secuenciales empezando en 2
+3. ✅ `format_rows_bonito` produce texto idéntico al esperado
+4. ✅ `actualizar_pagado` modifica correctamente Google Sheets
+5. ✅ Filtros de fechas funcionan con múltiples formatos
+6. ✅ No imprime absolutamente nada en consola
+7. ✅ Maneja errores graciosamente (retorna [] o None)
+8. ✅ Pasa todos los tests de compatibilidad
 
-### Autenticación:
-- POST a `token_uri` del service account con JWT assertion
+## 🔧 Herramientas de Desarrollo
 
-## ✅ Casos de Prueba
+En esta carpeta encontrarás:
+- `test_compatibility.py` - Tests automáticos de compatibilidad
+- `sample_data.py` - Datos de ejemplo para testing
+- `interface_contract.py` - Interfaz que debes implementar
+- `validation_tool.py` - Herramienta de validación automática
 
-1. **Lectura básica**: Leer 3 columnas obligatorias (C, D, H)
-2. **Lectura completa**: Leer 5 columnas (C, D, H, J, monto)
-3. **Filtro de vencimientos**: Facturas que vencen en 5 días
-4. **Filtro pendientes**: Todas las facturas futuras
-5. **Actualización**: Marcar factura como "PAGADO"
-6. **Manejo de espacios**: Hojas con nombres como "Hoja 1"
-7. **Filas vacías**: Manejar columnas de diferentes longitudes
+## 🚀 Próximos Pasos
 
-## 🚨 Puntos Críticos
+1. Implementa la clase `GoogleSheetsReader` con todos los métodos
+2. Ejecuta `python test_compatibility.py` para verificar compatibilidad
+3. Usa `python validation_tool.py` para validación continua
+4. Refina hasta que pases todos los tests
 
-1. **Codificación de URLs**: Sin esto, fallarán las hojas con espacios en el nombre
-2. **Scope de permisos**: Debe ser escritura completa, no readonly
-3. **Formato de JWT**: Header y payload exactos para Google
-4. **Manejo de filas**: ID debe corresponder al número real de fila en Sheets
-5. **Parsing de fechas**: Múltiples formatos para máxima compatibilidad
+¡Buena suerte! 🎉
